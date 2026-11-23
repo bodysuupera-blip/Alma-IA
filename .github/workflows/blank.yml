@@ -1,5 +1,5 @@
 
-name: ALMA IA V2.0 - GERAR APK
+name: ALMA IA V2.1 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar ALMA IA 2.0
+    name: Compilar ALMA IA V2.1
     runs-on: ubuntu-latest
 
     steps:
@@ -26,14 +26,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar e extrair projeto V2
+      - name: Localizar e extrair projeto
         run: |
           set -e
-          ZIP=$(find . -name "ALMA_IA_V2_PROJETO_ANDROID.zip" -print -quit)
+          ZIP=$(find . -name "ALMA_IA_V2_1_AUDIO_CORRIGIDO.zip" -print -quit)
+
           if [ -z "$ZIP" ]; then
-            echo "ZIP ALMA IA V2 não encontrado!"
+            echo "ERRO: ZIP ALMA IA V2.1 não encontrado!"
             exit 1
           fi
+
+          mkdir projeto-extraido
           unzip -o "$ZIP" -d projeto-extraido
           cp -a projeto-extraido/. .
 
@@ -42,7 +45,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Verificar estrutura
+      - name: Verificar projeto
         run: |
           test -f settings.gradle
           test -f app/build.gradle
@@ -54,7 +57,7 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-V2-APK
+          name: ALMA-IA-V2-1-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
