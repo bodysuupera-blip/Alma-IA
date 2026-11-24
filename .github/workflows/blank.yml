@@ -1,21 +1,23 @@
 
-name: ALMA IA 6.0 - GERAR APK
+name: ALMA IA 7.0 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Compilador ALMA IA 6.0
+    name: Compilador ALMA IA 7.0
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositório
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -24,85 +26,71 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK="$ANDROID_HOME"
-          SDKMANAGER=$(find "$SDK/cmdline-tools" \
-            -type f -name sdkmanager | head -1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "platform-tools"
-
-      - name: Extrair exclusivamente a versão 6.0
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP="ALMA_IA_6_0_PROJETO_ANDROID_CORRIGIDO.zip"
-
-          if [ ! -s "$ZIP" ]; then
-            echo "ERRO: ZIP corrigido da versão 6.0 não encontrado."
-            exit 1
-          fi
-
-          rm -rf build_alma6
-          mkdir -p build_alma6
-
-          unzip -q "$ZIP" -d build_alma6
-
-          ROOT="build_alma6"
-
-          test -f "$ROOT/settings.gradle"
-          test -f "$ROOT/build.gradle"
-          test -f "$ROOT/app/build.gradle"
-          test -f "$ROOT/app/src/main/assets/index.html"
-          test -f "$ROOT/app/src/main/java/com/almaia/app/MainActivity.java"
-
-          echo "PROJECT_DIR=$ROOT" >> "$GITHUB_ENV"
-
-          echo "Versão Android:"
-          grep -E "versionCode|versionName" "$ROOT/app/build.gradle"
-
-          grep -q "versionCode 6" "$ROOT/app/build.gradle"
-          grep -q "versionName '6.0'" "$ROOT/app/build.gradle"
-          grep -q "ALMA IA 6.0" "$ROOT/app/src/main/assets/index.html"
-
-          echo "ALMA IA 6.0 confirmada!"
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK 6.0
+      - name: Localizar projeto
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f "app/build.gradle" ]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          elif [ -f "alma7_work/app/build.gradle" ]; then
+            echo "PROJECT_DIR=alma7_work" >> "$GITHUB_ENV"
+          else
+            echo "ERRO: Projeto Android ALMA IA 7.0 não encontrado."
+            find . -maxdepth 4 -type f
+            exit 1
+          fi
+
+      - name: Verificar versão 7.0
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f "$PROJECT_DIR/settings.gradle"
+          test -f "$PROJECT_DIR/app/src/main/assets/index.html"
+          test -f "$PROJECT_DIR/app/src/main/java/com/almaia/app/MainActivity.java"
+
+          grep -q "versionCode 7" "$PROJECT_DIR/app/build.gradle"
+          grep -q "versionName '7.0'" "$PROJECT_DIR/app/build.gradle"
+
+          if grep -q "RECORD_AUDIO" "$PROJECT_DIR/app/src/main/AndroidManifest.xml"; then
+            echo "ERRO: Permissão de microfone encontrada."
+            exit 1
+          fi
+
+          echo "Projeto ALMA IA 7.0 verificado."
+
+      - name: Compilar APK
+        shell: bash
         run: |
           set -euo pipefail
           gradle --no-daemon --stacktrace \
             -p "$PROJECT_DIR" assembleDebug
 
-      - name: Conferir APK
+      - name: Verificar APK
+        shell: bash
         run: |
           set -euo pipefail
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          sha256sum "$APK"
 
-      - name: Publicar ALMA IA 6.0
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -s "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          sha256sum "$APK"
+          echo "APK ALMA IA 7.0 gerado com sucesso."
+
+      - name: Publicar APK 7.0
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-6.0-APK-v6
-          path: build_alma6/app/build/outputs/apk/debug/app-debug.apk
+          name: ALMA-IA-7.0-APK-NOVA-VERSAO
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-          
