@@ -1,5 +1,5 @@
 
-name: ALMA IA 7.1 - GERAR APK
+name: ALMA IA 7.2 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilar ALMA IA 7.1 Profissional
+    name: Compilar ALMA IA 7.2
     runs-on: ubuntu-22.04
 
     steps:
@@ -26,32 +26,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair fonte 7.1
+      - name: Extrair projeto 7.2
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="ALMA_IA_7_1_PROFISSIONAL.zip"
+          ZIP="ALMA_IA_7_2_PROFISSIONAL.zip"
 
           if [ ! -s "$ZIP" ]; then
-            echo "ERRO: ZIP da versão 7.1 não encontrado."
+            echo "ERRO: ZIP da versão 7.2 não encontrado."
             ls -lah
             exit 1
           fi
 
-          rm -rf build_alma7
-          mkdir -p build_alma7
+          rm -rf build_alma72
+          mkdir -p build_alma72
 
-          unzip -q "$ZIP" -d build_alma7
+          unzip -q "$ZIP" -d build_alma72
 
-          PROJECT="build_alma7"
+          PROJECT="build_alma72"
 
           test -f "$PROJECT/settings.gradle"
           test -f "$PROJECT/app/build.gradle"
-          test -f "$PROJECT/app/src/main/assets/index.html"
+          test -f "$PROJECT/backend/server.js"
 
-          grep -q "versionCode 71" "$PROJECT/app/build.gradle"
-          grep -q "versionName '7.1'" "$PROJECT/app/build.gradle"
+          grep -q "versionCode 72" "$PROJECT/app/build.gradle"
+          grep -q "versionName '7.2'" "$PROJECT/app/build.gradle"
 
           test -s "$PROJECT/app/src/main/assets/images/augusto.jpg"
           test -s "$PROJECT/app/src/main/assets/images/helena.jpg"
@@ -59,7 +59,7 @@ jobs:
 
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJECT" >> "$GITHUB_ENV"
 
-          echo "ALMA IA 7.1 validada."
+          echo "ALMA IA 7.2 verificada."
 
       - name: Preparar Android SDK
         shell: bash
@@ -69,7 +69,8 @@ jobs:
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
 
           SDKMANAGER="$(find "$SDK/cmdline-tools" \
-            -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+            -type f -name sdkmanager \
+            -print -quit 2>/dev/null || true)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERRO: sdkmanager não encontrado."
@@ -91,7 +92,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar APK 7.1
+      - name: Compilar APK 7.2
         shell: bash
         run: |
           set -euo pipefail
@@ -111,14 +112,15 @@ jobs:
             exit 1
           fi
 
+          echo "APK ALMA IA 7.2:"
           ls -lh "$APK"
           sha256sum "$APK"
 
-      - name: Publicar APK 7.1
+      - name: Publicar APK 7.2
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-7.1-APK-PROFISSIONAL
-          path: build_alma7/app/build/outputs/apk/debug/app-debug.apk
+          name: ALMA-IA-7.2-APK-PROFISSIONAL
+          path: build_alma72/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
           
