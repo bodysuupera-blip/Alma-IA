@@ -4,15 +4,13 @@ name: ALMA IA 6.0 - GERAR APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  compilar:
     name: Compilador ALMA IA 6.0
     runs-on: ubuntu-22.04
 
@@ -30,16 +28,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar Android SDK
+      - name: Localizar Android SDK
         shell: bash
         run: |
-          set -euo pipefail
+          set -eo pipefail
 
-          mkdir -p "$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager 2>/dev/null | head -1)
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERRO: sdkmanager não encontrado."
+            find "$ANDROID_HOME" -maxdepth 4 -type f | head -60
+            exit 1
+          fi
 
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -eo pipefail
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "platform-tools"
@@ -49,37 +63,41 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Verificar projeto ALMA IA 6.0
+      - name: Conferir arquivos do ALMA IA
+        shell: bash
         run: |
           set -euo pipefail
 
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/assets/index.html
-          test -f app/src/main/assets/augusto.jpg
-          test -f app/src/main/assets/helena.jpg
-          test -f app/src/main/assets/gabriel.jpg
-          test -f app/src/main/java/com/almaia/app/MainActivity.java
+          for f in settings.gradle build.gradle app/build.gradle \
+            app/src/main/AndroidManifest.xml \
+            app/src/main/assets/index.html \
+            app/src/main/assets/augusto.jpg \
+            app/src/main/assets/helena.jpg \
+            app/src/main/assets/gabriel.jpg \
+            app/src/main/java/com/almaia/app/MainActivity.java
+          do
+            if [ ! -s "$f" ]; then
+              echo "ERRO: arquivo não encontrado: $f"
+              find . -maxdepth 5 -type f | head -100
+              exit 1
+            fi
+          done
 
-          echo "Projeto ALMA IA 6.0 encontrado!"
+          echo "Arquivos verificados!"
 
-      - name: Compilar aplicativo Android
+      - name: Compilar APK
         run: |
           gradle --no-daemon --stacktrace assembleDebug
 
       - name: Verificar APK
         run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          echo "APK ALMA IA 6.0 gerado!"
+          test -s app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Disponibilizar aplicativo
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: ALMA-IA-6.0-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+          
