@@ -1,20 +1,23 @@
 
-name: ALMA IA 3.0 - VOZ NEURAL KOTLIN
+name: ALMA IA 3.0 - GERAR APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  compilar:
+    name: Compilar ALMA IA 3.0
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar repositorio
+      - name: Baixar projeto
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -23,91 +26,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto corrigido
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ZIP=$(find . -type f \
-            -name 'ALMA_IA_3_0_VOZ_NEURAL_KOTLIN_CORRIGIDO.zip' \
-            -print -quit)
-
-          if [ -z "$ZIP" ]; then
-            echo "ERRO: Envie o ZIP corrigido para a raiz do repositorio."
-            exit 1
-          fi
-
-          mkdir -p extraido
-          unzip -oq "$ZIP" -d extraido
-
-          SETTINGS=$(find extraido -type f \
-            -name settings.gradle -print -quit)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado."
-            exit 1
-          fi
-
-          ROOT=$(dirname "$SETTINGS")
-
-          test -f "$ROOT/app/build.gradle"
-          test -f "$ROOT/app/src/main/java/com/almaia/app/voice/NeuralVoice.java"
-
-          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$ROOT" >> "$GITHUB_ENV"
-
-          echo "Projeto localizado: $ROOT"
-
       - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Baixar motor e modelo neural
-        shell: bash
+      - name: Verificar projeto ALMA IA
         run: |
           set -euo pipefail
-          cd "$PROJECT_DIR"
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/java/com/almaia/app/MainActivity.java
+          test -f app/src/main/assets/augusto.jpg
+          test -f app/src/main/assets/helena.jpg
+          test -f app/src/main/assets/gabriel.jpg
+          echo "Projeto ALMA IA 3.0 identificado."
 
-          mkdir -p app/libs
-          mkdir -p app/src/main/assets/tts_model
-          mkdir -p /tmp/alma-voice
-
-          curl -fL --retry 3 \
-            https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/sherpa-onnx-2.0.3.aar \
-            -o app/libs/sherpa-onnx-2.0.3.aar
-
-          curl -fL --retry 3 \
-            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-dii-high.tar.bz2 \
-            -o /tmp/alma-voice/model.tar.bz2
-
-          tar -xjf /tmp/alma-voice/model.tar.bz2 \
-            -C /tmp/alma-voice
-
-          MODEL=$(find /tmp/alma-voice \
-            -name 'pt_BR-dii-high.onnx' -print -quit)
-
-          if [ -z "$MODEL" ]; then
-            echo "ERRO: modelo de voz nao encontrado."
-            exit 1
-          fi
-
-          cp -a "$(dirname "$MODEL")"/. \
-            app/src/main/assets/tts_model/
-
-          test -f app/src/main/assets/tts_model/tokens.txt
-          test -f app/src/main/assets/tts_model/pt_BR-dii-high.onnx
-
-      - name: Verificar dependencia Kotlin
+      - name: Compilar aplicativo Android
         run: |
-          grep -q "kotlin-stdlib" "$PROJECT_DIR/app/build.gradle"
+          set -euo pipefail
+          gradle --no-daemon --stacktrace assembleDebug
 
-      - name: Gerar APK
-        run: gradle -p "$PROJECT_DIR" assembleDebug
+      - name: Verificar APK
+        run: |
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          echo "APK gerado com sucesso!"
 
-      - name: Publicar APK
+      - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-3.0-VOZ-NEURAL
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          name: ALMA-IA-3.0-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
           
