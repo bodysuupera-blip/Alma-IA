@@ -1,10 +1,10 @@
 
-name: ALMA IA 3.0 - Voz Neural e APK
+name: ALMA IA 3.0 - GERAR APK CORRIGIDO
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -23,16 +23,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Localizar projeto Android
+        shell: bash
+        run: |
+          set -e
+
+          SETTINGS=$(find . -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            ZIP=$(find . -name "ALMA_IA_3_0_VOZ_NEURAL.zip" -o -name "ALMA_IA_3_0_CORRIGIDO.zip" | head -n 1)
+
+            if [ -z "$ZIP" ]; then
+              echo "ERRO: Projeto Android não encontrado."
+              exit 1
+            fi
+
+            mkdir -p extraido
+            unzip -oq "$ZIP" -d extraido
+            SETTINGS=$(find extraido -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          fi
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
+            exit 1
+          fi
+
+          ROOT=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$ROOT" >> "$GITHUB_ENV"
+
+          echo "Projeto localizado em: $ROOT"
+          test -f "$ROOT/app/build.gradle"
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Baixar motor Sherpa-ONNX e voz pt-BR
+      - name: Baixar motor e modelo de voz
+        shell: bash
         run: |
-          set -euo pipefail
+          set -e
+          cd "$PROJECT_DIR"
 
-          mkdir -p app/libs app/src/main/assets/tts_model /tmp/alma-voice
+          mkdir -p app/libs app/src/main/assets/tts_model
+          mkdir -p /tmp/alma-voice
 
           curl -fL --retry 3 \
             https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.3/sherpa-onnx-2.0.3.aar \
@@ -44,24 +78,22 @@ jobs:
 
           tar -xjf /tmp/alma-voice/model.tar.bz2 -C /tmp/alma-voice
 
-          MODEL_DIR=$(find /tmp/alma-voice -type f \
-            -name 'pt_BR-dii-high.onnx' -print -quit | xargs dirname)
+          MODEL=$(find /tmp/alma-voice -name 'pt_BR-dii-high.onnx' -print -quit)
 
-          test -n "$MODEL_DIR"
+          if [ -z "$MODEL" ]; then
+            echo "Modelo de voz não encontrado."
+            exit 1
+          fi
 
-          cp -a "$MODEL_DIR"/. app/src/main/assets/tts_model/
+          cp -a "$(dirname "$MODEL")"/. app/src/main/assets/tts_model/
 
-          test -f app/src/main/assets/tts_model/pt_BR-dii-high.onnx
-          test -f app/src/main/assets/tts_model/tokens.txt
-          test -d app/src/main/assets/tts_model/espeak-ng-data
+      - name: Compilar aplicativo
+        run: gradle -p "$PROJECT_DIR" assembleDebug
 
-      - name: Compilar APK
-        run: gradle assembleDebug
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-3.0-APK-VOZ-NEURAL
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ALMA-IA-3.0-VOZ-NEURAL
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
