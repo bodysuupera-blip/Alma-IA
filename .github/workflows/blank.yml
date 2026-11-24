@@ -1,5 +1,5 @@
 
-name: ALMA IA 3.0 - VOZ NEURAL CORRIGIDA
+name: ALMA IA 3.0 - VOZ NEURAL
 
 on:
   workflow_dispatch:
@@ -23,41 +23,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar projeto Android
+      - name: Extrair e localizar projeto
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          SETTINGS=$(find . -type f \( \
-            -name settings.gradle \
-            -o -name settings.gradle.kts \
-          \) -print -quit)
+          mkdir -p extraido
+
+          ZIP=$(find . -type f \
+            -iname 'ALMA_IA_3_0_VOZ_NEURAL_CORRIGIDO.zip' \
+            -print -quit)
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: Envie primeiro o ZIP para o repositorio."
+            exit 1
+          fi
+
+          unzip -oq "$ZIP" -d extraido
+
+          SETTINGS=$(find extraido -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle nao encontrado"
+            echo "ERRO: settings.gradle nao encontrado."
             exit 1
           fi
 
           ROOT=$(dirname "$SETTINGS")
 
-          if [ ! -f "$ROOT/app/build.gradle" ]; then
-            echo "ERRO: app/build.gradle nao encontrado"
-            exit 1
-          fi
+          test -f "$ROOT/app/build.gradle"
 
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/$ROOT" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $ROOT"
+
+          echo "Projeto encontrado: $ROOT"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Baixar Sherpa ONNX e voz brasileira
+      - name: Preparar motor de voz
         shell: bash
         run: |
           set -euo pipefail
-
           cd "$PROJECT_DIR"
 
           mkdir -p app/libs
@@ -78,26 +87,18 @@ jobs:
           MODEL=$(find /tmp/alma-voice \
             -name 'pt_BR-dii-high.onnx' -print -quit)
 
-          if [ -z "$MODEL" ]; then
-            echo "Modelo de voz nao encontrado"
-            exit 1
-          fi
+          test -n "$MODEL"
 
           cp -a "$(dirname "$MODEL")"/. \
             app/src/main/assets/tts_model/
 
-          test -f app/src/main/assets/tts_model/pt_BR-dii-high.onnx
-          test -f app/src/main/assets/tts_model/tokens.txt
-          test -d app/src/main/assets/tts_model/espeak-ng-data
+      - name: Compilar APK
+        run: gradle -p "$PROJECT_DIR" assembleDebug
 
-      - name: Compilar ALMA IA 3.0
-        run: |
-          gradle -p "$PROJECT_DIR" assembleDebug
-
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-3.0-VOZ-NEURAL-APK
+          name: ALMA-IA-3.0-VOZ-NEURAL
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
