@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  compilar:
-    name: Compilador ALMA IA 6.0
+  build:
+    name: Compilar ALMA IA 6.0
     runs-on: ubuntu-22.04
 
     env:
@@ -19,7 +19,7 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
       - name: Configurar Java 17
@@ -28,76 +28,60 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Localizar Android SDK
-        shell: bash
+      - name: Localizar SDK
         run: |
-          set -eo pipefail
-
+          set -euo pipefail
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager 2>/dev/null | head -1)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERRO: sdkmanager não encontrado."
-            find "$ANDROID_HOME" -maxdepth 4 -type f | head -60
-            exit 1
-          fi
-
+            -type f -name sdkmanager | head -1)
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Instalar componentes Android
-        shell: bash
+      - name: Instalar Android SDK
         run: |
-          set -eo pipefail
-
+          set -euo pipefail
           yes | "$SDKMANAGER" --licenses || true
-
-          "$SDKMANAGER" --install \
+          "$SDKMANAGER" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "platform-tools"
 
-      - name: Configurar Gradle 8.9
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Conferir arquivos do ALMA IA
-        shell: bash
+      - name: Extrair ALMA IA 6.0
         run: |
           set -euo pipefail
+          ZIP="ALMA_IA_6_0_PROJETO_ANDROID.zip"
 
-          for f in settings.gradle build.gradle app/build.gradle \
-            app/src/main/AndroidManifest.xml \
-            app/src/main/assets/index.html \
-            app/src/main/assets/augusto.jpg \
-            app/src/main/assets/helena.jpg \
-            app/src/main/assets/gabriel.jpg \
-            app/src/main/java/com/almaia/app/MainActivity.java
-          do
-            if [ ! -s "$f" ]; then
-              echo "ERRO: arquivo não encontrado: $f"
-              find . -maxdepth 5 -type f | head -100
-              exit 1
-            fi
-          done
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: envie o ZIP ALMA IA 6.0 para o GitHub."
+            exit 1
+          fi
 
-          echo "Arquivos verificados!"
+          mkdir -p projeto
+          unzip -oq "$ZIP" -d projeto
+
+      - name: Verificar projeto
+        run: |
+          set -euo pipefail
+          test -f projeto/settings.gradle
+          test -f projeto/build.gradle
+          test -f projeto/app/build.gradle
+          test -f projeto/app/src/main/assets/index.html
+          test -f projeto/app/src/main/AndroidManifest.xml
+          echo "Projeto ALMA IA 6.0 localizado!"
 
       - name: Compilar APK
         run: |
-          gradle --no-daemon --stacktrace assembleDebug
-
-      - name: Verificar APK
-        run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
+          gradle --no-daemon --stacktrace \
+            -p projeto assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: ALMA-IA-6.0-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: projeto/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
           
