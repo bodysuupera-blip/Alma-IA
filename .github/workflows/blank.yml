@@ -1,5 +1,5 @@
 
-name: ALMA IA 3.0 - VOZ NEURAL
+name: ALMA IA 3.0 - VOZ NEURAL KOTLIN
 
 on:
   workflow_dispatch:
@@ -23,27 +23,25 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair e localizar projeto
+      - name: Extrair projeto corrigido
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p extraido
-
           ZIP=$(find . -type f \
-            -iname 'ALMA_IA_3_0_VOZ_NEURAL_CORRIGIDO.zip' \
+            -name 'ALMA_IA_3_0_VOZ_NEURAL_KOTLIN_CORRIGIDO.zip' \
             -print -quit)
 
           if [ -z "$ZIP" ]; then
-            echo "ERRO: Envie primeiro o ZIP para o repositorio."
+            echo "ERRO: Envie o ZIP corrigido para a raiz do repositorio."
             exit 1
           fi
 
+          mkdir -p extraido
           unzip -oq "$ZIP" -d extraido
 
           SETTINGS=$(find extraido -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -print -quit)
+            -name settings.gradle -print -quit)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: settings.gradle nao encontrado."
@@ -53,17 +51,18 @@ jobs:
           ROOT=$(dirname "$SETTINGS")
 
           test -f "$ROOT/app/build.gradle"
+          test -f "$ROOT/app/src/main/java/com/almaia/app/voice/NeuralVoice.java"
 
           echo "PROJECT_DIR=$GITHUB_WORKSPACE/$ROOT" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado: $ROOT"
+          echo "Projeto localizado: $ROOT"
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Preparar motor de voz
+      - name: Baixar motor e modelo neural
         shell: bash
         run: |
           set -euo pipefail
@@ -87,15 +86,25 @@ jobs:
           MODEL=$(find /tmp/alma-voice \
             -name 'pt_BR-dii-high.onnx' -print -quit)
 
-          test -n "$MODEL"
+          if [ -z "$MODEL" ]; then
+            echo "ERRO: modelo de voz nao encontrado."
+            exit 1
+          fi
 
           cp -a "$(dirname "$MODEL")"/. \
             app/src/main/assets/tts_model/
 
-      - name: Compilar APK
+          test -f app/src/main/assets/tts_model/tokens.txt
+          test -f app/src/main/assets/tts_model/pt_BR-dii-high.onnx
+
+      - name: Verificar dependencia Kotlin
+        run: |
+          grep -q "kotlin-stdlib" "$PROJECT_DIR/app/build.gradle"
+
+      - name: Gerar APK
         run: gradle -p "$PROJECT_DIR" assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: ALMA-IA-3.0-VOZ-NEURAL
