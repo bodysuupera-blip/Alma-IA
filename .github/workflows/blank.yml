@@ -1,5 +1,5 @@
 
-name: ALMA IA 7.0 - GERAR APK
+name: ALMA IA 7.1 - GERAR APK
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    name: Compilador ALMA IA 7.0
+    name: Compilar ALMA IA 7.1 Profissional
     runs-on: ubuntu-22.04
 
     steps:
@@ -26,34 +26,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extrair projeto ALMA IA 7.0
+      - name: Extrair fonte 7.1
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="ALMA_IA_7_0_TEXTO_SEM_MICROFONE.zip"
+          ZIP="ALMA_IA_7_1_PROFISSIONAL.zip"
 
           if [ ! -s "$ZIP" ]; then
-            echo "ERRO: ZIP da ALMA IA 7.0 não encontrado."
+            echo "ERRO: ZIP da versão 7.1 não encontrado."
             ls -lah
             exit 1
           fi
 
           rm -rf build_alma7
           mkdir -p build_alma7
+
           unzip -q "$ZIP" -d build_alma7
 
-          PROJECT="build_alma7/alma7_work"
+          PROJECT="build_alma7"
 
-          if [ ! -f "$PROJECT/settings.gradle" ] || \
-             [ ! -f "$PROJECT/app/build.gradle" ]; then
-            echo "ERRO: Estrutura Android inválida."
-            find build_alma7 -maxdepth 5 -type f
-            exit 1
-          fi
+          test -f "$PROJECT/settings.gradle"
+          test -f "$PROJECT/app/build.gradle"
+          test -f "$PROJECT/app/src/main/assets/index.html"
 
-          echo "PROJECT_DIR=$PROJECT" >> "$GITHUB_ENV"
-          echo "Projeto localizado: $PROJECT"
+          grep -q "versionCode 71" "$PROJECT/app/build.gradle"
+          grep -q "versionName '7.1'" "$PROJECT/app/build.gradle"
+
+          test -s "$PROJECT/app/src/main/assets/images/augusto.jpg"
+          test -s "$PROJECT/app/src/main/assets/images/helena.jpg"
+          test -s "$PROJECT/app/src/main/assets/images/gabriel.jpg"
+
+          echo "PROJECT_DIR=$GITHUB_WORKSPACE/$PROJECT" >> "$GITHUB_ENV"
+
+          echo "ALMA IA 7.1 validada."
 
       - name: Preparar Android SDK
         shell: bash
@@ -61,11 +67,6 @@ jobs:
           set -euo pipefail
 
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-
-          if [ ! -d "$SDK" ]; then
-            echo "ERRO: Android SDK não encontrado."
-            exit 1
-          fi
 
           SDKMANAGER="$(find "$SDK/cmdline-tools" \
             -type f -name sdkmanager -print -quit 2>/dev/null || true)"
@@ -85,31 +86,12 @@ jobs:
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Conferir versão 7.0
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          BUILD="$PROJECT_DIR/app/build.gradle"
-          MANIFEST="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-
-          grep -q "versionCode 7" "$BUILD"
-          grep -q "versionName '7.0'" "$BUILD"
-
-          if grep -q "RECORD_AUDIO" "$MANIFEST"; then
-            echo "ERRO: Permissão de microfone encontrada."
-            exit 1
-          fi
-
-          echo "Versão 7.0 confirmada."
-          echo "Microfone não solicitado."
-
-      - name: Compilar APK ALMA IA 7.0
+      - name: Compilar APK 7.1
         shell: bash
         run: |
           set -euo pipefail
@@ -117,7 +99,7 @@ jobs:
           gradle --no-daemon --stacktrace \
             -p "$PROJECT_DIR" assembleDebug
 
-      - name: Verificar APK
+      - name: Conferir APK
         shell: bash
         run: |
           set -euo pipefail
@@ -129,15 +111,14 @@ jobs:
             exit 1
           fi
 
-          echo "APK GERADO:"
           ls -lh "$APK"
           sha256sum "$APK"
 
-      - name: Publicar APK 7.0
+      - name: Publicar APK 7.1
         uses: actions/upload-artifact@v4
         with:
-          name: ALMA-IA-7.0-APK-NOVA-VERSAO
-          path: build_alma7/alma7_work/app/build/outputs/apk/debug/app-debug.apk
+          name: ALMA-IA-7.1-APK-PROFISSIONAL
+          path: build_alma7/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
           
