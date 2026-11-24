@@ -11,73 +11,77 @@ permissions:
 
 jobs:
   compilar:
-    name: Compilar ALMA IA 3.0
+    name: Compilador ALMA IA 3.0
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Baixar projeto
+      - name: Baixar repositório
         uses: actions/checkout@v4
 
-      - name: Configurar Java
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e verificar ALMA IA
+      - name: Extrair ALMA IA 3.0
         shell: bash
         run: |
           set -euo pipefail
 
-          SETTINGS=$(find . -type f -name settings.gradle \
-            -not -path '*/.gradle/*' -print -quit)
+          ZIP="ALMA_IA_V3_0_TEXTO_COM_RECONHECIMENTO_VOZ.zip"
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            find . -maxdepth 5 -type f | head -100
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: ZIP da versão 3.0 não encontrado."
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
+          mkdir -p projeto
+          unzip -q "$ZIP" -d projeto
 
-          for FILE in build.gradle app/build.gradle \
-            app/src/main/AndroidManifest.xml \
-            app/src/main/assets/index.html \
-            app/src/main/java/com/almaia/app/MainActivity.java
-          do
-            if [ ! -f "$PROJECT_DIR/$FILE" ]; then
-              echo "ERRO: arquivo ausente: $PROJECT_DIR/$FILE"
-              exit 1
-            fi
-          done
+          echo "Projeto descompactado!"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Projeto ALMA IA localizado!"
-
-      - name: Compilar APK
+      - name: Verificar arquivos Android
         shell: bash
         run: |
           set -euo pipefail
+
+          test -f projeto/settings.gradle
+          test -f projeto/build.gradle
+          test -f projeto/app/build.gradle
+          test -f projeto/app/src/main/AndroidManifest.xml
+          test -f projeto/app/src/main/assets/index.html
+          test -f projeto/app/src/main/java/com/almaia/app/MainActivity.java
+
+          test -f projeto/app/src/main/assets/augusto.jpg
+          test -f projeto/app/src/main/assets/helena.jpg
+          test -f projeto/app/src/main/assets/gabriel.jpg
+
+          echo "ALMA IA 3.0 verificado!"
+
+      - name: Compilar aplicativo
+        run: |
           gradle --no-daemon --stacktrace \
-            -p "$PROJECT_DIR" assembleDebug
+            -p projeto assembleDebug
 
       - name: Conferir APK
         run: |
-          set -euo pipefail
-          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          echo "APK encontrado!"
+          test -s projeto/app/build/outputs/apk/debug/app-debug.apk
+          echo "APK gerado com sucesso!"
 
-      - name: Disponibilizar aplicativo
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: ALMA-IA-3.0-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: projeto/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
           
