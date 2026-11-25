@@ -25,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -35,26 +35,27 @@ jobs:
         with:
           packages: "platform-tools"
 
-      - name: Instalar Android SDK 35
+      - name: Instalar SDK Android 35
         run: |
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Localizar projeto Android
+      - name: Extrair projeto MENTEX NEXT
+        run: |
+          mkdir -p projeto
+          unzip -o MENTEX_NEXT_NOVO_JOGO_PROJETO.zip -d projeto
+
+      - name: Localizar estrutura Android
         id: projeto
         shell: bash
         run: |
-          echo "Procurando projeto Android..."
-
-          SETTINGS=$(find . -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) -not -path "*/.gradle/*" -print -quit)
+          SETTINGS=$(find projeto -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: Nenhum settings.gradle encontrado."
-            echo "Arquivos existentes no repositório:"
-            find . -maxdepth 4 -type f | head -100
+            echo "ERRO: settings.gradle não encontrado no ZIP."
+            find projeto -maxdepth 5 -type f
             exit 1
           fi
 
@@ -62,16 +63,15 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: Pasta app não encontrada no projeto:"
-            echo "$PROJECT_DIR"
-            find "$PROJECT_DIR" -maxdepth 3 -type f
+            echo "ERRO: Arquivo Gradle da pasta app não encontrado."
+            find "$PROJECT_DIR" -maxdepth 4 -type f
             exit 1
           fi
 
-          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "Projeto encontrado: $PROJECT_DIR"
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Compilar APK
+      - name: Compilar MENTEX NEXT
         run: |
           gradle --no-daemon \
             -p "${{ steps.projeto.outputs.project_dir }}" \
