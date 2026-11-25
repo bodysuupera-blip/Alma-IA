@@ -25,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configurar Gradle 8.9
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -40,20 +40,48 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Verificar estrutura do projeto
+      - name: Localizar projeto Android
+        id: projeto
+        shell: bash
         run: |
-          test -f settings.gradle.kts || test -f settings.gradle
-          test -f app/build.gradle.kts || test -f app/build.gradle
+          echo "Procurando projeto Android..."
+
+          SETTINGS=$(find . -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) -not -path "*/.gradle/*" -print -quit)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: Nenhum settings.gradle encontrado."
+            echo "Arquivos existentes no repositório:"
+            find . -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERRO: Pasta app não encontrada no projeto:"
+            echo "$PROJECT_DIR"
+            find "$PROJECT_DIR" -maxdepth 3 -type f
+            exit 1
+          fi
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Compilar APK
         run: |
-          gradle --no-daemon clean assembleDebug
+          gradle --no-daemon \
+            -p "${{ steps.projeto.outputs.project_dir }}" \
+            clean assembleDebug
 
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: MENTEX-NEXT-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.projeto.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
           
