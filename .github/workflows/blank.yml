@@ -1,5 +1,5 @@
 
-name: MENTEX NEXT - Gerar APK
+name: MENTEX - Gerar APK
 
 on:
   workflow_dispatch:
@@ -40,10 +40,16 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Extrair projeto MENTEX NEXT
+      - name: Extrair projeto MENTEX
         run: |
+          if [ ! -f "MENTEX_PROJETO_250_DESAFIOS.zip" ]; then
+            echo "ERRO: ZIP do MENTEX não encontrado!"
+            ls -la
+            exit 1
+          fi
+
           mkdir -p projeto
-          unzip -o MENTEX_NEXT_NOVO_JOGO_PROJETO.zip -d projeto
+          unzip -o MENTEX_PROJETO_250_DESAFIOS.zip -d projeto
 
       - name: Localizar estrutura Android
         id: projeto
@@ -54,7 +60,7 @@ jobs:
             -print -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado no ZIP."
+            echo "ERRO: settings.gradle não encontrado!"
             find projeto -maxdepth 5 -type f
             exit 1
           fi
@@ -63,7 +69,7 @@ jobs:
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: Arquivo Gradle da pasta app não encontrado."
+            echo "ERRO: build.gradle do aplicativo não encontrado!"
             find "$PROJECT_DIR" -maxdepth 4 -type f
             exit 1
           fi
@@ -71,16 +77,27 @@ jobs:
           echo "Projeto encontrado: $PROJECT_DIR"
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Compilar MENTEX NEXT
+      - name: Compilar MENTEX
         run: |
           gradle --no-daemon \
             -p "${{ steps.projeto.outputs.project_dir }}" \
             clean assembleDebug
 
+      - name: Verificar APK
+        run: |
+          APK="${{ steps.projeto.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado!"
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-NEXT-APK
+          name: MENTEX-APK
           path: ${{ steps.projeto.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
