@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - BOAS VINDAS HORIZONTAL
+name: NEXUS 350 V6 - 150 FASES FULLSCREEN
 
 on:
   workflow_dispatch:
@@ -27,11 +27,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte atualizada
+      - name: Extrair fonte Nexus 350 V6
         run: |
           set -e
 
-          ZIP="Nexus350_BOAS_VINDAS_REGRAS_HORIZONTAL.zip"
+          ZIP="Nexus350_150_FASES_FULLSCREEN.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ZIP não encontrado: $ZIP"
@@ -52,6 +52,7 @@ jobs:
 
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
           echo "Fonte localizada em: $PROJECT_DIR"
 
       - name: Instalar dependências
@@ -72,10 +73,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-BoasVindas-Horizontal
+          name: Nexus350-V6-150Fases
           path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
