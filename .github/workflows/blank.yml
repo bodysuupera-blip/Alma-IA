@@ -1,12 +1,10 @@
 
-name: NEXUS 350 - REBUILD REAL 150 FASES
+name: NEXUS 350 - REBUILD 150 FASES ZIP
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   build:
@@ -16,66 +14,85 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Configurar Java 21
+      - name: Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Verificar fonte nova
+      - name: Extrair ZIP correto
+        id: source
         run: |
           set -e
+          ZIP="Nexus350_REBUILD_REAL_150_FASES.zip"
 
-          test -f package.json || {
-            echo "ERRO: package.json ausente na raiz"
-            ls -la
+          test -f "$ZIP" || {
+            echo "ZIP REBUILD não encontrado"
+            ls -lh *.zip
             exit 1
           }
 
-          test -f www/index.html || {
-            echo "ERRO: www/index.html ausente"
-            exit 1
-          }
+          rm -rf source
+          mkdir source
+          unzip -oq "$ZIP" -d source
 
-          test -f www/game.js || {
-            echo "ERRO: www/game.js ausente"
-            exit 1
-          }
+          test -f source/package.json
+          test -f source/www/index.html
+          test -f source/www/game.js
+          test -f source/icon-round.png
 
-          echo "Fonte REBUILD encontrada"
+          echo "project_dir=source" >> "$GITHUB_OUTPUT"
+
+          echo "Fonte correta extraída:"
+          cat source/package.json
+
+      - name: Validar jogo
+        working-directory: source
+        run: |
+          set -e
+          npm run build
+          echo "JavaScript validado"
 
       - name: Instalar dependências
+        working-directory: source
         run: npm install
 
-      - name: Preparar Android
+      - name: Criar Android
+        working-directory: source
         run: npx cap add android
 
       - name: Sincronizar Capacitor
+        working-directory: source
         run: npx cap sync android
 
-      - name: Configurar Android
+      - name: Configurar horizontal e ícone
+        working-directory: source
         run: |
           set -e
+          python3 -m pip install --quiet Pillow
 
-          python3 - <<'PY'
+          python3 <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
-
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          tree = ET.parse(p)
-          root = tree.getroot()
+          from PIL import Image
 
           ns = "http://schemas.android.com/apk/res/android"
-          attr = f"{{{ns}}}screenOrientation"
+          ET.register_namespace("android", ns)
 
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(manifest)
+          root = tree.getroot()
           app = root.find("application")
+
           if app is None:
-              raise SystemExit("Application não encontrada")
+              raise SystemExit("application ausente")
+
+          launcher = []
 
           for activity in app.findall("activity"):
               for intent in activity.findall("intent-filter"):
@@ -92,17 +109,42 @@ jobs:
                       "android.intent.action.MAIN" in actions
                       and "android.intent.category.LAUNCHER" in categories
                   ):
-                      activity.set(attr, "landscape")
+                      launcher.append(activity)
 
-          ET.register_namespace("android", ns)
-          tree.write(p, encoding="utf-8", xml_declaration=True)
-          ET.parse(p)
+          if not launcher:
+              raise SystemExit("Launcher não encontrado")
 
-          print("Orientação horizontal configurada")
+          for activity in launcher:
+              activity.set(f"{{{ns}}}screenOrientation", "landscape")
+
+          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          ET.parse(manifest)
+
+          icon = Image.open("icon-round.png").convert("RGBA")
+          icon = icon.resize((1024, 1024), Image.Resampling.LANCZOS)
+
+          for density, size in {
+              "mdpi": 48,
+              "hdpi": 72,
+              "xhdpi": 96,
+              "xxhdpi": 144,
+              "xxxhdpi": 192
+          }.items():
+              folder = Path(f"android/app/src/main/res/mipmap-{density}")
+              folder.mkdir(parents=True, exist_ok=True)
+              resized = icon.resize((size, size), Image.Resampling.LANCZOS)
+              resized.save(folder / "ic_launcher.png")
+              resized.save(folder / "ic_launcher_round.png")
+
+          app.set(f"{{{ns}}}icon", "@mipmap/ic_launcher")
+          app.set(f"{{{ns}}}roundIcon", "@mipmap/ic_launcher_round")
+          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+
+          print("Orientação horizontal e ícone configurados")
           PY
 
       - name: Compilar APK
-        working-directory: android
+        working-directory: source/android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleDebug
@@ -110,8 +152,8 @@ jobs:
       - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-REBUILD-150-FASES-NEWGAME
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-REBUILD-150-FASES
+          path: source/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
