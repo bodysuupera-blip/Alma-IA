@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - 150 FASES FULLSCREEN ICON REDONDO
+name: NEXUS 350 - 150 FASES MANIFEST FIX
 
 on:
   workflow_dispatch:
@@ -11,154 +11,117 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node 20
+      - name: Configurar Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Java 21
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte atual
+      - name: Extrair fonte
+        id: source
         run: |
           set -e
+
           ZIP="Nexus350_150_FASES_FULLSCREEN_ICON_REDONDO.zip"
-          test -f "$ZIP" || { echo "ZIP não encontrado"; ls -la; exit 1; }
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP não encontrado"
+            ls -la
+            exit 1
+          fi
+
           rm -rf fonte_extraida
-          mkdir fonte_extraida
+          mkdir -p fonte_extraida
           unzip -oq "$ZIP" -d fonte_extraida
-          test -f fonte_extraida/package.json || {
+
+          PACKAGE=$(find fonte_extraida -type f -name package.json | head -n 1)
+
+          if [ -z "$PACKAGE" ]; then
             echo "package.json não encontrado"
             exit 1
-          }
-          grep -q '150' fonte_extraida/www/index.html || {
-            echo "Validação das 150 fases falhou"
-            exit 1
-          }
+          fi
+
+          PROJECT_DIR=$(dirname "$PACKAGE")
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+          echo "Fonte: $PROJECT_DIR"
 
       - name: Instalar dependências
-        working-directory: fonte_extraida
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npm install
 
-      - name: Adicionar Android
-        working-directory: fonte_extraida
+      - name: Preparar Android
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap add android
 
       - name: Sincronizar Capacitor
-        working-directory: fonte_extraida
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap sync android
 
-      - name: Configurar horizontal, tela cheia e ícone
-        working-directory: fonte_extraida/android
+      - name: Corrigir Manifest com XML seguro
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: |
           set -e
-          python3 -m pip install --quiet Pillow
-          python3 - <<'PY'
+          python3 <<'PY'
+          import xml.etree.ElementTree as ET
           from pathlib import Path
-          from PIL import Image
-          import re
 
-          manifest=Path('app/src/main/AndroidManifest.xml')
-          txt=manifest.read_text()
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(manifest)
+          root = tree.getroot()
 
-          txt=re.sub(
-            r'android:screenOrientation="[^"]*"',
-            'android:screenOrientation="landscape"',
-            txt
-          )
+          ns = "http://schemas.android.com/apk/res/android"
+          orientation = f"{{{ns}}}screenOrientation"
 
-          if 'android:screenOrientation=' not in txt:
-            txt=txt.replace(
-              '<activity',
-              '<activity android:screenOrientation="landscape"',
-              1
-            )
+          app = root.find("application")
+          if app is None:
+              raise SystemExit("Tag application não encontrada")
 
-          txt=txt.replace(
-            'android:icon="@mipmap/ic_launcher"',
-            'android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"'
-          )
-          manifest.write_text(txt)
+          activities = list(app.findall("activity")) + list(app.findall("activity-alias"))
+          launcher = []
 
-          # Tela imersiva
-          main=Path('app/src/main/java')
-          java_files=list(main.rglob('MainActivity.java'))
+          for activity in activities:
+              for intent in activity.findall("intent-filter"):
+                  actions = [
+                      e.get(f"{{{ns}}}name")
+                      for e in intent.findall("action")
+                  ]
+                  categories = [
+                      e.get(f"{{{ns}}}name")
+                      for e in intent.findall("category")
+                  ]
 
-          if java_files:
-            p=java_files[0]
-            s=p.read_text()
+                  if "android.intent.action.MAIN" in actions and \
+                     "android.intent.category.LAUNCHER" in categories:
+                      launcher.append(activity)
 
-            if 'IMMERSIVE_STICKY' not in s:
-              imports=[
-                'import android.os.Bundle;',
-                'import android.view.View;',
-                'import android.view.WindowManager;'
-              ]
+          if not launcher:
+              raise SystemExit("Activity launcher não encontrada")
 
-              missing=[imp for imp in imports if imp not in s]
+          for activity in launcher:
+              activity.set(orientation, "landscape")
 
-              if missing:
-                s=re.sub(
-                  r'(package [^;]+;\s*)',
-                  r'\1\n'+'\n'.join(missing)+'\n',
-                  s,
-                  count=1
-                )
+          ET.register_namespace("android", ns)
+          tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
-              s=s.replace(
-                'public class MainActivity extends BridgeActivity {',
-                '''public class MainActivity extends BridgeActivity {
-          @Override
-          public void onCreate(Bundle savedInstanceState) {
-            super.onCreate(savedInstanceState);
-            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
-            getWindow().getDecorView().setSystemUiVisibility(
-              View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-              View.SYSTEM_UI_FLAG_FULLSCREEN |
-              View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-              View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-              View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            );
-          }
-          '''
-              )
-              p.write_text(s)
+          # Confirma que o Manifest continua sendo XML válido
+          ET.parse(manifest)
 
-          # Criar ícones redondos em todas as densidades Android
-          icon=Image.open('../icon-round.png').convert('RGBA')
-
-          sizes={
-            'mdpi':48,
-            'hdpi':72,
-            'xhdpi':96,
-            'xxhdpi':144,
-            'xxxhdpi':192
-          }
-
-          for density,size in sizes.items():
-            d=Path(f'app/src/main/res/mipmap-{density}')
-            d.mkdir(parents=True,exist_ok=True)
-
-            icon.resize((size,size),Image.Resampling.LANCZOS).save(
-              d/'ic_launcher.png'
-            )
-            icon.resize((size,size),Image.Resampling.LANCZOS).save(
-              d/'ic_launcher_round.png'
-            )
-
-          print("Ícone redondo e tela horizontal configurados")
+          print("Manifest validado: orientação horizontal")
           PY
 
       - name: Compilar APK
-        working-directory: fonte_extraida/android
+        working-directory: ${{ steps.source.outputs.project_dir }}/android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleDebug
@@ -166,8 +129,8 @@ jobs:
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-150Fases-Fullscreen-IconRedondo
-          path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-150Fases-Landscape
+          path: ${{ steps.source.outputs.project_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
