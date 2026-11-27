@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - APK 100 FASES (FONTE NOVA)
+name: NEXUS 350 - APK 100 FASES AUTOMATICO
 
 on:
   workflow_dispatch:
@@ -27,41 +27,65 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Verificar fonte
+      - name: Localizar e extrair ZIP da fonte
         run: |
           set -e
-          if [ ! -f package.json ]; then
-            echo "ERRO: package.json nao encontrado na raiz."
-            ls -la
+
+          ZIP=$(find . -maxdepth 2 -type f \
+            -name "Nexus350_FONTE_NOVA_100_FASES.zip" | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            ZIP=$(find . -maxdepth 2 -type f \
+              -name "*.zip" | head -n 1)
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: nenhum ZIP encontrado."
             exit 1
           fi
 
-          echo "Fonte encontrada:"
-          cat package.json
+          echo "Fonte selecionada: $ZIP"
 
-      - name: Instalar dependencias
-        run: npm install
+          mkdir -p fonte_extraida
+          unzip -oq "$ZIP" -d fonte_extraida
 
-      - name: Instalar Capacitor Android
-        run: |
-          if [ ! -d android ]; then
-            npx cap add android
+          PACKAGE=$(find fonte_extraida -type f \
+            -name package.json | head -n 1)
+
+          if [ -z "$PACKAGE" ]; then
+            echo "ERRO: ZIP não contém package.json"
+            find fonte_extraida -maxdepth 4 -type f
+            exit 1
           fi
 
-      - name: Sincronizar projeto Android
+          PROJECT_DIR=$(dirname "$PACKAGE")
+          echo "Projeto localizado: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Instalar dependências
+        run: npm install
+        working-directory: fonte_extraida
+
+      - name: Preparar Android
+        working-directory: fonte_extraida
+        run: |
+          npx cap add android
+
+      - name: Sincronizar Capacitor
+        working-directory: fonte_extraida
         run: npx cap sync android
 
-      - name: Gerar APK
+      - name: Compilar APK
+        working-directory: fonte_extraida/android
         run: |
-          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Publicar APK
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Nexus350-100Fases
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
