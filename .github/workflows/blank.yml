@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - CORRIGIR TELA TRAVADA
+name: NEXUS 350 - BOAS VINDAS HORIZONTAL
 
 on:
   workflow_dispatch:
@@ -27,11 +27,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte corrigida
+      - name: Extrair fonte atualizada
         run: |
           set -e
 
-          ZIP="Nexus350_CORRIGIR_TELA_TRAVADA.zip"
+          ZIP="Nexus350_BOAS_VINDAS_REGRAS_HORIZONTAL.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ZIP não encontrado: $ZIP"
@@ -45,14 +45,14 @@ jobs:
           PACKAGE=$(find fonte_extraida -type f -name package.json | head -n 1)
 
           if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não encontrado"
-            find fonte_extraida -maxdepth 4 -type f
+            echo "ERRO: package.json não encontrado dentro do ZIP"
+            find fonte_extraida -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Fonte encontrada em: $PROJECT_DIR"
+          echo "Fonte localizada em: $PROJECT_DIR"
 
       - name: Instalar dependências
         working-directory: fonte_extraida
@@ -72,10 +72,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-TELA-CORRIGIDA
+          name: Nexus350-BoasVindas-Horizontal
           path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
