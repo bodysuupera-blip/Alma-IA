@@ -14,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node.js
+      - name: Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -25,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair ZIP e localizar fonte automaticamente
+      - name: Extrair ZIP e localizar fonte
         id: source
         run: |
           set -e
@@ -33,7 +33,7 @@ jobs:
           ZIP="Nexus350_ORIGINAL_FEATURES_150_PHASES.zip"
 
           test -f "$ZIP" || {
-            echo "ZIP não encontrado: $ZIP"
+            echo "ZIP não encontrado"
             ls -lh *.zip
             exit 1
           }
@@ -44,34 +44,39 @@ jobs:
 
           PACKAGE=$(find fonte_nexus -type f -name package.json | head -n 1)
 
-          if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não existe dentro do ZIP"
+          test -n "$PACKAGE" || {
+            echo "package.json não encontrado"
             find fonte_nexus -maxdepth 5 -type f
             exit 1
-          fi
+          }
 
           PROJECT_DIR=$(dirname "$PACKAGE")
 
           test -f "$PROJECT_DIR/www/index.html" || {
-            echo "index.html não encontrado na fonte"
-            find "$PROJECT_DIR" -maxdepth 3 -type f
+            echo "index.html não encontrado"
             exit 1
           }
 
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-          echo "Fonte selecionada: $PROJECT_DIR"
-          cat "$PACKAGE"
+          echo "Fonte encontrada: $PROJECT_DIR"
 
       - name: Instalar dependências
         working-directory: ${{ steps.source.outputs.project_dir }}
         run: npm install
 
-      - name: Preparar Capacitor Android
+      - name: Instalar Android Capacitor
+        working-directory: ${{ steps.source.outputs.project_dir }}
+        run: |
+          set -e
+          CAP_VERSION=$(node -p "require('./node_modules/@capacitor/core/package.json').version")
+          echo "Capacitor Core: $CAP_VERSION"
+          npm install @capacitor/android@$CAP_VERSION
+
+      - name: Adicionar Android
         working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap add android
 
-      - name: Sincronizar Android
+      - name: Sincronizar Capacitor
         working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap sync android
 
@@ -79,6 +84,7 @@ jobs:
         working-directory: ${{ steps.source.outputs.project_dir }}
         run: |
           set -e
+
           python3 <<'PY'
           import xml.etree.ElementTree as ET
           from pathlib import Path
@@ -115,13 +121,13 @@ jobs:
                       found = True
 
           if not found:
-              raise SystemExit("Activity Launcher não encontrada")
+              raise SystemExit("Activity principal não encontrada")
 
           ET.register_namespace("android", ns)
           tree.write(p, encoding="utf-8", xml_declaration=True)
           ET.parse(p)
 
-          print("Manifest validado e horizontal configurado")
+          print("Orientação horizontal configurada")
           PY
 
       - name: Compilar APK
@@ -130,11 +136,11 @@ jobs:
           chmod +x gradlew
           ./gradlew clean assembleDebug
 
-      - name: Upload APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: Nexus350-150-Fases-APK
-          path: ${{ steps.source.outputs.project_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          path: fonte_nexus/**/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
