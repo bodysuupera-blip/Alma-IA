@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - 150 FASES MANIFEST FIX
+name: NEXUS 350 - REBUILD REAL 150 FASES
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Node 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -27,70 +27,57 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte
-        id: source
+      - name: Verificar fonte nova
         run: |
           set -e
 
-          ZIP="Nexus350_150_FASES_FULLSCREEN_ICON_REDONDO.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP não encontrado"
+          test -f package.json || {
+            echo "ERRO: package.json ausente na raiz"
             ls -la
             exit 1
-          fi
+          }
 
-          rm -rf fonte_extraida
-          mkdir -p fonte_extraida
-          unzip -oq "$ZIP" -d fonte_extraida
-
-          PACKAGE=$(find fonte_extraida -type f -name package.json | head -n 1)
-
-          if [ -z "$PACKAGE" ]; then
-            echo "package.json não encontrado"
+          test -f www/index.html || {
+            echo "ERRO: www/index.html ausente"
             exit 1
-          fi
+          }
 
-          PROJECT_DIR=$(dirname "$PACKAGE")
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          test -f www/game.js || {
+            echo "ERRO: www/game.js ausente"
+            exit 1
+          }
 
-          echo "Fonte: $PROJECT_DIR"
+          echo "Fonte REBUILD encontrada"
 
       - name: Instalar dependências
-        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npm install
 
       - name: Preparar Android
-        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap add android
 
       - name: Sincronizar Capacitor
-        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap sync android
 
-      - name: Corrigir Manifest com XML seguro
-        working-directory: ${{ steps.source.outputs.project_dir }}
+      - name: Configurar Android
         run: |
           set -e
-          python3 <<'PY'
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          tree = ET.parse(manifest)
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(p)
           root = tree.getroot()
 
           ns = "http://schemas.android.com/apk/res/android"
-          orientation = f"{{{ns}}}screenOrientation"
+          attr = f"{{{ns}}}screenOrientation"
 
           app = root.find("application")
           if app is None:
-              raise SystemExit("Tag application não encontrada")
+              raise SystemExit("Application não encontrada")
 
-          activities = list(app.findall("activity")) + list(app.findall("activity-alias"))
-          launcher = []
-
-          for activity in activities:
+          for activity in app.findall("activity"):
               for intent in activity.findall("intent-filter"):
                   actions = [
                       e.get(f"{{{ns}}}name")
@@ -101,36 +88,30 @@ jobs:
                       for e in intent.findall("category")
                   ]
 
-                  if "android.intent.action.MAIN" in actions and \
-                     "android.intent.category.LAUNCHER" in categories:
-                      launcher.append(activity)
-
-          if not launcher:
-              raise SystemExit("Activity launcher não encontrada")
-
-          for activity in launcher:
-              activity.set(orientation, "landscape")
+                  if (
+                      "android.intent.action.MAIN" in actions
+                      and "android.intent.category.LAUNCHER" in categories
+                  ):
+                      activity.set(attr, "landscape")
 
           ET.register_namespace("android", ns)
-          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          tree.write(p, encoding="utf-8", xml_declaration=True)
+          ET.parse(p)
 
-          # Confirma que o Manifest continua sendo XML válido
-          ET.parse(manifest)
-
-          print("Manifest validado: orientação horizontal")
+          print("Orientação horizontal configurada")
           PY
 
       - name: Compilar APK
-        working-directory: ${{ steps.source.outputs.project_dir }}/android
+        working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-150Fases-Landscape
-          path: ${{ steps.source.outputs.project_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-REBUILD-150-FASES-NEWGAME
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
