@@ -1,12 +1,10 @@
 
-name: NEXUS 350 - ORIGINAL FEATURES 150 FASES
+name: NEXUS 350 - ORIGINAL FEATURES 150 FASES FIX
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
 
 jobs:
   build:
@@ -16,7 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Node.js 20
+      - name: Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -27,58 +25,66 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte Nexus 350
+      - name: Extrair ZIP e localizar fonte automaticamente
+        id: source
         run: |
           set -e
 
           ZIP="Nexus350_ORIGINAL_FEATURES_150_PHASES.zip"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: ZIP atualizado não encontrado"
+          test -f "$ZIP" || {
+            echo "ZIP não encontrado: $ZIP"
             ls -lh *.zip
+            exit 1
+          }
+
+          rm -rf fonte_nexus
+          mkdir fonte_nexus
+          unzip -oq "$ZIP" -d fonte_nexus
+
+          PACKAGE=$(find fonte_nexus -type f -name package.json | head -n 1)
+
+          if [ -z "$PACKAGE" ]; then
+            echo "ERRO: package.json não existe dentro do ZIP"
+            find fonte_nexus -maxdepth 5 -type f
             exit 1
           fi
 
-          rm -rf fonte_nexus
-          mkdir -p fonte_nexus
-          unzip -oq "$ZIP" -d fonte_nexus
+          PROJECT_DIR=$(dirname "$PACKAGE")
 
-          test -f fonte_nexus/package.json || {
-            echo "ERRO: package.json não encontrado dentro do ZIP"
-            find fonte_nexus -maxdepth 4 -type f
+          test -f "$PROJECT_DIR/www/index.html" || {
+            echo "index.html não encontrado na fonte"
+            find "$PROJECT_DIR" -maxdepth 3 -type f
             exit 1
           }
 
-          test -f fonte_nexus/www/index.html || {
-            echo "ERRO: index.html não encontrado"
-            exit 1
-          }
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
-          echo "Fonte Nexus 350 extraída"
+          echo "Fonte selecionada: $PROJECT_DIR"
+          cat "$PACKAGE"
 
       - name: Instalar dependências
-        working-directory: fonte_nexus
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npm install
 
-      - name: Preparar Android
-        working-directory: fonte_nexus
+      - name: Preparar Capacitor Android
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap add android
 
-      - name: Sincronizar Capacitor
-        working-directory: fonte_nexus
+      - name: Sincronizar Android
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: npx cap sync android
 
       - name: Configurar orientação horizontal
-        working-directory: fonte_nexus
+        working-directory: ${{ steps.source.outputs.project_dir }}
         run: |
           set -e
-
           python3 <<'PY'
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          tree = ET.parse(manifest)
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(p)
           root = tree.getroot()
 
           ns = "http://schemas.android.com/apk/res/android"
@@ -109,26 +115,26 @@ jobs:
                       found = True
 
           if not found:
-              raise SystemExit("Activity principal não encontrada")
+              raise SystemExit("Activity Launcher não encontrada")
 
           ET.register_namespace("android", ns)
-          tree.write(manifest, encoding="utf-8", xml_declaration=True)
-          ET.parse(manifest)
+          tree.write(p, encoding="utf-8", xml_declaration=True)
+          ET.parse(p)
 
-          print("Orientação horizontal configurada")
+          print("Manifest validado e horizontal configurado")
           PY
 
       - name: Compilar APK
-        working-directory: fonte_nexus/android
+        working-directory: ${{ steps.source.outputs.project_dir }}/android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleDebug
 
-      - name: Publicar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-Original-150-Fases
-          path: fonte_nexus/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-150-Fases-APK
+          path: ${{ steps.source.outputs.project_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
