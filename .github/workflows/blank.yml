@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - V7 FORCAR NOVA VERSAO
+name: NEXUS 350 - 150 FASES FULLSCREEN ICON REDONDO
 
 on:
   workflow_dispatch:
@@ -11,7 +11,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,86 +26,147 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair exclusivamente a fonte V6
+      - name: Extrair fonte atual
         run: |
           set -e
-          ZIP="Nexus350_150_FASES_FULLSCREEN.zip"
-
-          test -f "$ZIP" || {
-            echo "ZIP V6 não encontrado"
-            exit 1
-          }
-
+          ZIP="Nexus350_150_FASES_FULLSCREEN_ICON_REDONDO.zip"
+          test -f "$ZIP" || { echo "ZIP não encontrado"; ls -la; exit 1; }
           rm -rf fonte_extraida
-          mkdir -p fonte_extraida
+          mkdir fonte_extraida
           unzip -oq "$ZIP" -d fonte_extraida
-
-          PACKAGE=$(find fonte_extraida -name package.json | head -n 1)
-          test -n "$PACKAGE" || {
+          test -f fonte_extraida/package.json || {
             echo "package.json não encontrado"
             exit 1
           }
-
-          PROJECT_DIR=$(dirname "$PACKAGE")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          VERSION=$(node -p "require('./$PACKAGE').version")
-          echo "Versão da fonte: $VERSION"
-
-          test "$VERSION" = "6.0.0" || {
-            echo "Fonte incorreta: esperado V6.0.0"
+          grep -q '150' fonte_extraida/www/index.html || {
+            echo "Validação das 150 fases falhou"
             exit 1
           }
-
-          grep -q "150" "$PROJECT_DIR/www/index.html" || {
-            echo "Marcador de 150 fases não encontrado"
-            exit 1
-          }
-
-          echo "Fonte V6 confirmada"
 
       - name: Instalar dependências
         working-directory: fonte_extraida
         run: npm install
 
-      - name: Criar Android
+      - name: Adicionar Android
         working-directory: fonte_extraida
         run: npx cap add android
 
-      - name: Sincronizar
+      - name: Sincronizar Capacitor
         working-directory: fonte_extraida
         run: npx cap sync android
 
-      - name: Atualizar versão do APK
+      - name: Configurar horizontal, tela cheia e ícone
         working-directory: fonte_extraida/android
         run: |
+          set -e
+          python3 -m pip install --quiet Pillow
           python3 - <<'PY'
           from pathlib import Path
+          from PIL import Image
           import re
 
-          p = Path("app/build.gradle")
-          if not p.exists():
-              p = Path("app/build.gradle.kts")
+          manifest=Path('app/src/main/AndroidManifest.xml')
+          txt=manifest.read_text()
 
-          s = p.read_text()
+          txt=re.sub(
+            r'android:screenOrientation="[^"]*"',
+            'android:screenOrientation="landscape"',
+            txt
+          )
 
-          s = re.sub(r'versionCode\s+\d+', 'versionCode 7', s)
-          s = re.sub(r'versionName\s+"[^"]+"', 'versionName "7.0"', s)
+          if 'android:screenOrientation=' not in txt:
+            txt=txt.replace(
+              '<activity',
+              '<activity android:screenOrientation="landscape"',
+              1
+            )
 
-          p.write_text(s)
-          print("APK atualizado para versão 7.0")
+          txt=txt.replace(
+            'android:icon="@mipmap/ic_launcher"',
+            'android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"'
+          )
+          manifest.write_text(txt)
+
+          # Tela imersiva
+          main=Path('app/src/main/java')
+          java_files=list(main.rglob('MainActivity.java'))
+
+          if java_files:
+            p=java_files[0]
+            s=p.read_text()
+
+            if 'IMMERSIVE_STICKY' not in s:
+              imports=[
+                'import android.os.Bundle;',
+                'import android.view.View;',
+                'import android.view.WindowManager;'
+              ]
+
+              missing=[imp for imp in imports if imp not in s]
+
+              if missing:
+                s=re.sub(
+                  r'(package [^;]+;\s*)',
+                  r'\1\n'+'\n'.join(missing)+'\n',
+                  s,
+                  count=1
+                )
+
+              s=s.replace(
+                'public class MainActivity extends BridgeActivity {',
+                '''public class MainActivity extends BridgeActivity {
+          @Override
+          public void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            getWindow().getDecorView().setSystemUiVisibility(
+              View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+              View.SYSTEM_UI_FLAG_FULLSCREEN |
+              View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+              View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+              View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            );
+          }
+          '''
+              )
+              p.write_text(s)
+
+          # Criar ícones redondos em todas as densidades Android
+          icon=Image.open('../icon-round.png').convert('RGBA')
+
+          sizes={
+            'mdpi':48,
+            'hdpi':72,
+            'xhdpi':96,
+            'xxhdpi':144,
+            'xxxhdpi':192
+          }
+
+          for density,size in sizes.items():
+            d=Path(f'app/src/main/res/mipmap-{density}')
+            d.mkdir(parents=True,exist_ok=True)
+
+            icon.resize((size,size),Image.Resampling.LANCZOS).save(
+              d/'ic_launcher.png'
+            )
+            icon.resize((size,size),Image.Resampling.LANCZOS).save(
+              d/'ic_launcher_round.png'
+            )
+
+          print("Ícone redondo e tela horizontal configurados")
           PY
 
-      - name: Compilar APK novo
+      - name: Compilar APK
         working-directory: fonte_extraida/android
         run: |
           chmod +x gradlew
           ./gradlew clean assembleDebug
 
-      - name: Enviar APK V7
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-V7-NOVA-150-FASES
+          name: Nexus350-150Fases-Fullscreen-IconRedondo
           path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
