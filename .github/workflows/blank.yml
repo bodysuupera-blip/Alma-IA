@@ -1,5 +1,5 @@
 
-name: NEXUS 350 - APK 100 FASES FIX
+name: NEXUS 350 - APK 100 FASES (FONTE NOVA)
 
 on:
   workflow_dispatch:
@@ -13,29 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Localizar fonte automaticamente
-        id: detectar
-        run: |
-          set -e
-          PACKAGE=$(find . -type f -name package.json \
-            -not -path "*/node_modules/*" | head -n 1)
-
-          if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não encontrado"
-            find . -maxdepth 4 -type f
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$PACKAGE")
-          PROJECT_DIR=$(realpath "$PROJECT_DIR")
-
-          echo "Projeto encontrado em: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Configurar Node
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -46,32 +27,41 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Verificar fonte
+        run: |
+          set -e
+          if [ ! -f package.json ]; then
+            echo "ERRO: package.json nao encontrado na raiz."
+            ls -la
+            exit 1
+          fi
+
+          echo "Fonte encontrada:"
+          cat package.json
+
       - name: Instalar dependencias
-        working-directory: ${{ steps.detectar.outputs.project_dir }}
         run: npm install
 
-      - name: Preparar Android
-        working-directory: ${{ steps.detectar.outputs.project_dir }}
+      - name: Instalar Capacitor Android
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
-      - name: Sincronizar Capacitor
-        working-directory: ${{ steps.detectar.outputs.project_dir }}
+      - name: Sincronizar projeto Android
         run: npx cap sync android
 
       - name: Gerar APK
-        working-directory: ${{ steps.detectar.outputs.project_dir }}/android
         run: |
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-100Fases-APK
-          path: ${{ steps.detectar.outputs.project_dir }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexus350-100Fases
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
           
