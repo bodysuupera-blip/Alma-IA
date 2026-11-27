@@ -1,5 +1,5 @@
 
-name: NEXUS 350 V6 - 150 FASES FULLSCREEN
+name: NEXUS 350 - V7 FORCAR NOVA VERSAO
 
 on:
   workflow_dispatch:
@@ -16,67 +16,97 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js
+      - name: Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Configurar Java 21
+      - name: Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
 
-      - name: Extrair fonte Nexus 350 V6
+      - name: Extrair exclusivamente a fonte V6
         run: |
           set -e
-
           ZIP="Nexus350_150_FASES_FULLSCREEN.zip"
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP não encontrado: $ZIP"
-            ls -la
+          test -f "$ZIP" || {
+            echo "ZIP V6 não encontrado"
             exit 1
-          fi
+          }
 
+          rm -rf fonte_extraida
           mkdir -p fonte_extraida
           unzip -oq "$ZIP" -d fonte_extraida
 
-          PACKAGE=$(find fonte_extraida -type f -name package.json | head -n 1)
-
-          if [ -z "$PACKAGE" ]; then
-            echo "ERRO: package.json não encontrado dentro do ZIP"
-            find fonte_extraida -maxdepth 5 -type f
+          PACKAGE=$(find fonte_extraida -name package.json | head -n 1)
+          test -n "$PACKAGE" || {
+            echo "package.json não encontrado"
             exit 1
-          fi
+          }
 
           PROJECT_DIR=$(dirname "$PACKAGE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          echo "Fonte localizada em: $PROJECT_DIR"
+          VERSION=$(node -p "require('./$PACKAGE').version")
+          echo "Versão da fonte: $VERSION"
+
+          test "$VERSION" = "6.0.0" || {
+            echo "Fonte incorreta: esperado V6.0.0"
+            exit 1
+          }
+
+          grep -q "150" "$PROJECT_DIR/www/index.html" || {
+            echo "Marcador de 150 fases não encontrado"
+            exit 1
+          }
+
+          echo "Fonte V6 confirmada"
 
       - name: Instalar dependências
         working-directory: fonte_extraida
         run: npm install
 
-      - name: Preparar Android
+      - name: Criar Android
         working-directory: fonte_extraida
         run: npx cap add android
 
-      - name: Sincronizar Capacitor
+      - name: Sincronizar
         working-directory: fonte_extraida
         run: npx cap sync android
 
-      - name: Compilar APK
+      - name: Atualizar versão do APK
+        working-directory: fonte_extraida/android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("app/build.gradle")
+          if not p.exists():
+              p = Path("app/build.gradle.kts")
+
+          s = p.read_text()
+
+          s = re.sub(r'versionCode\s+\d+', 'versionCode 7', s)
+          s = re.sub(r'versionName\s+"[^"]+"', 'versionName "7.0"', s)
+
+          p.write_text(s)
+          print("APK atualizado para versão 7.0")
+          PY
+
+      - name: Compilar APK novo
         working-directory: fonte_extraida/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean assembleDebug
 
-      - name: Disponibilizar APK
+      - name: Enviar APK V7
         uses: actions/upload-artifact@v4
         with:
-          name: Nexus350-V6-150Fases
+          name: Nexus350-V7-NOVA-150-FASES
           path: fonte_extraida/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
