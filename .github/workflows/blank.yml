@@ -1,104 +1,50 @@
 
-name: MENTEX - Gerar APK
+name: NEXUS 350 - APK 100 FASES
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
+      - master
 
 jobs:
-  construir:
-    name: Construir APK Android
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar projeto
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Java 17
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
 
-      - name: Configurar Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
+      - name: Install dependencies
+        run: npm install
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: "platform-tools"
-
-      - name: Instalar SDK Android 35
+      - name: Install Android platform
         run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Extrair projeto MENTEX
-        run: |
-          if [ ! -f "MENTEX_PROJETO_250_DESAFIOS.zip" ]; then
-            echo "ERRO: ZIP do MENTEX não encontrado!"
-            ls -la
-            exit 1
+          if [ ! -d android ]; then
+            npx cap add android
           fi
 
-          mkdir -p projeto
-          unzip -o MENTEX_PROJETO_250_DESAFIOS.zip -d projeto
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-      - name: Localizar estrutura Android
-        id: projeto
-        shell: bash
-        run: |
-          SETTINGS=$(find projeto -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print -quit)
+      - name: Build APK
+        run: cd android && ./gradlew assembleDebug
 
-          if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado!"
-            find projeto -maxdepth 5 -type f
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          if [ ! -f "$PROJECT_DIR/app/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
-            echo "ERRO: build.gradle do aplicativo não encontrado!"
-            find "$PROJECT_DIR" -maxdepth 4 -type f
-            exit 1
-          fi
-
-          echo "Projeto encontrado: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Compilar MENTEX
-        run: |
-          gradle --no-daemon \
-            -p "${{ steps.projeto.outputs.project_dir }}" \
-            clean assembleDebug
-
-      - name: Verificar APK
-        run: |
-          APK="${{ steps.projeto.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk"
-
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado!"
-            exit 1
-          fi
-
-          ls -lh "$APK"
-
-      - name: Publicar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MENTEX-APK
-          path: ${{ steps.projeto.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+          name: Nexus350-100Fases
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           
